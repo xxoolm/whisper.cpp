@@ -76,9 +76,8 @@ func (context *context) SetTranslate(v bool) {
 	context.params.SetTranslate(v)
 }
 
-// Set speedup flag
-func (context *context) SetSpeedup(v bool) {
-	context.params.SetSpeedup(v)
+func (context *context) SetSplitOnWord(v bool) {
+	context.params.SetSplitOnWord(v)
 }
 
 // Set number of threads to use
@@ -93,7 +92,7 @@ func (context *context) SetOffset(v time.Duration) {
 
 // Set duration of audio to process
 func (context *context) SetDuration(v time.Duration) {
-	context.params.SetOffset(int(v.Milliseconds()))
+	context.params.SetDuration(int(v.Milliseconds()))
 }
 
 // Set timestamp token probability threshold (~0.01)
@@ -119,6 +118,42 @@ func (context *context) SetTokenTimestamps(b bool) {
 // Set max tokens per segment (0 = no limit)
 func (context *context) SetMaxTokensPerSegment(n uint) {
 	context.params.SetMaxTokensPerSegment(int(n))
+}
+
+// Set audio encoder context
+func (context *context) SetAudioCtx(n uint) {
+	context.params.SetAudioCtx(int(n))
+}
+
+// Set maximum number of text context tokens to store
+func (context *context) SetMaxContext(n int) {
+	context.params.SetMaxContext(n)
+}
+
+// Set Beam Size
+func (context *context) SetBeamSize(n int) {
+	context.params.SetBeamSize(n)
+}
+
+// Set Entropy threshold
+func (context *context) SetEntropyThold(t float32) {
+	context.params.SetEntropyThold(t)
+}
+
+// Set Temperature
+func (context *context) SetTemperature(t float32) {
+	context.params.SetTemperature(t)
+}
+
+// Set the fallback temperature incrementation
+// Pass -1.0 to disable this feature
+func (context *context) SetTemperatureFallback(t float32) {
+	context.params.SetTemperatureFallback(t)
+}
+
+// Set initial prompt
+func (context *context) SetInitialPrompt(prompt string) {
+	context.params.SetInitialPrompt(prompt)
 }
 
 // ResetTimings resets the mode timings. Should be called before processing
@@ -152,12 +187,16 @@ func (context *context) WhisperLangAutoDetect(offset_ms int, n_threads int) ([]f
 }
 
 // Process new sample data and return any errors
-func (context *context) Process(data []float32, cb SegmentCallback) error {
+func (context *context) Process(
+	data []float32,
+	callNewSegment SegmentCallback,
+	callProgress ProgressCallback,
+) error {
 	if context.model.ctx == nil {
 		return ErrInternalAppError
 	}
 	// If the callback is defined then we force on single_segment mode
-	if cb != nil {
+	if callNewSegment != nil {
 		context.params.SetSingleSegment(true)
 	}
 
@@ -165,23 +204,27 @@ func (context *context) Process(data []float32, cb SegmentCallback) error {
 	processors := 0
 	if processors > 1 {
 		if err := context.model.ctx.Whisper_full_parallel(context.params, data, processors, nil, func(new int) {
-			if cb != nil {
+			if callNewSegment != nil {
 				num_segments := context.model.ctx.Whisper_full_n_segments()
 				s0 := num_segments - new
 				for i := s0; i < num_segments; i++ {
-					cb(toSegment(context.model.ctx, i))
+					callNewSegment(toSegment(context.model.ctx, i))
 				}
 			}
 		}); err != nil {
 			return err
 		}
 	} else if err := context.model.ctx.Whisper_full(context.params, data, nil, func(new int) {
-		if cb != nil {
+		if callNewSegment != nil {
 			num_segments := context.model.ctx.Whisper_full_n_segments()
 			s0 := num_segments - new
 			for i := s0; i < num_segments; i++ {
-				cb(toSegment(context.model.ctx, i))
+				callNewSegment(toSegment(context.model.ctx, i))
 			}
+		}
+	}, func(progress int) {
+		if callProgress != nil {
+			callProgress(progress)
 		}
 	}); err != nil {
 		return err
