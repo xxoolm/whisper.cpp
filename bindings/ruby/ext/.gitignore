@@ -1,7 +1,11 @@
 Makefile
-ggml.c
-ggml.h
+whisper.so
 whisper.bundle
-whisper.cpp
-whisper.h
-dr_wav.h
+whisper.dll
+scripts/get-flags.mk
+*.o
+/*/**/*.c
+/*/**/*.cpp
+/*/**/*.h
+/*/**/*.m
+/*/**/*.metal
