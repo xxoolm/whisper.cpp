@@ -12,6 +12,15 @@ from coremltools.models.neural_network.quantization_utils import quantize_weight
 from whisper.model import Whisper, AudioEncoder, TextDecoder, ResidualAttentionBlock, MultiHeadAttention, ModelDimensions
 from whisper import load_model
 
+# Disable PyTorch Scaled Dot-Product Attention (SDPA) to avoid compatibility issues.
+# The Whisper implementation expects a specific behavior from
+# torch.nn.functional.scaled_dot_product_attention that differs between PyTorch
+# versions. Setting use_sdpa=False forces Whisper to use its manual attention
+# implementation instead, which is more stable across different PyTorch versions
+# (2.5.0 required by coremltools vs newer versions).
+import whisper.model
+whisper.model.MultiHeadAttention.use_sdpa = False
+
 # Use for changing dim of input in encoder and decoder embeddings
 def linear_to_conv2d_map(state_dict, prefix, local_metadata, strict,
                          missing_keys, unexpected_keys, error_msgs):
@@ -143,20 +152,7 @@ class AudioEncoderANE(AudioEncoder):
             x = block(x)
 
         x = self.ln_post(x)
-
-        # """
-        # TODO:
-        # I think we need to transpose the result here to make it fit whisper.cpp memory order.
-        # However, even doing this, the results are still wrong. Kind of less wrong compared to
-        # not transposing, but still wrong.
-
-        # Also, I don't know why the original OpenAI implementation does not need to transpose
-
-        # transpose to (batch_size, n_ctx, n_state)
-        # x : torch.Tensor, shape = (batch_size, n_state, 1, n_ctx)
-
-        # """
-        # x = x.transpose(1,3)
+        x = x.squeeze(2).transpose(1, 2)
 
         return x
 
@@ -194,7 +190,7 @@ class TextDecoderANE(TextDecoder):
         x = x.permute(0,2,3,1).squeeze(0)
 
         # ANE can only load tensors with dim size of at most 16,384 - whisper uses 51,864 (en) or 51,865 (multi-lang) tokens so we need to compute in chunks
-        if self.token_embedding.weight.shape[0] == 51865:
+        if self.token_embedding.weight.shape[0] >= 51865:
             # split in 11 chunks - 4715 each
             splits = self.token_embedding.weight.split(self.token_embedding.weight.shape[0]//11, dim=0)
             logits = torch.cat([torch.einsum('bid,jd->bij', x, split) for split in splits]).view(*x.shape[:2], -1)
@@ -252,13 +248,13 @@ class WhisperANE(Whisper):
 def convert_encoder(hparams, model, quantize=False):
     model.eval()
 
-    input_shape = (1, 80, 3000)
+    input_shape = (1, hparams.n_mels, 3000)
     input_data = torch.randn(input_shape)
     traced_model = torch.jit.trace(model, input_data)
 
     model = ct.convert(
         traced_model,
-        convert_to=None if quantize else "mlprogram", # convert will fail if weights are quantized, not sure why
+        convert_to="neuralnetwork",
         inputs=[ct.TensorType(name="logmel_data", shape=input_shape)],
         outputs=[ct.TensorType(name="output")],
         compute_units=ct.ComputeUnit.ALL
@@ -273,15 +269,16 @@ def convert_decoder(hparams, model, quantize=False):
     model.eval()
 
     tokens_shape = (1, 1)
-    audio_shape = (1, hparams.n_audio_state, 1, 1500)
+    audio_shape = (1, hparams.n_audio_ctx, hparams.n_audio_state)
 
     audio_data = torch.randn(audio_shape)
-    token_data = torch.randint(50257, tokens_shape).long()
+    token_data = torch.randint(hparams.n_vocab, tokens_shape).long()
+
     traced_model = torch.jit.trace(model, (token_data, audio_data))
 
     model = ct.convert(
         traced_model,
-        convert_to=None if quantize else "mlprogram", # convert will fail if weights are quantized, not sure why
+        convert_to="neuralnetwork",
         inputs=[
             ct.TensorType(name="token_data", shape=tokens_shape, dtype=int),
             ct.TensorType(name="audio_data", shape=audio_shape)
@@ -296,13 +293,13 @@ def convert_decoder(hparams, model, quantize=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, help="model to convert (e.g. tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, large)", required=True)
+    parser.add_argument("--model", type=str, help="model to convert (e.g. tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, large-v1, large-v2, large-v3, large-v3-turbo)", required=True)
     parser.add_argument("--encoder-only", type=bool, help="only convert encoder", default=False)
     parser.add_argument("--quantize",     type=bool, help="quantize weights to F16", default=False)
     parser.add_argument("--optimize-ane", type=bool, help="optimize for ANE execution (currently broken)", default=False)
     args = parser.parse_args()
 
-    if args.model not in ["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large"]:
+    if args.model not in ["tiny", "tiny.en", "base", "base.en", "small", "small.en", "small.en-tdrz", "medium", "medium.en", "large-v1", "large-v2", "large-v3", "large-v3-turbo"]:
         raise ValueError("Invalid model name")
 
     whisper = load_model(args.model).cpu()

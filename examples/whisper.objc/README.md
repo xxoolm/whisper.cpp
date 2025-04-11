@@ -11,18 +11,25 @@ https://user-images.githubusercontent.com/1991296/204126266-ce4177c6-6eca-4bd9-b
 
 ## Usage
 
-```java
-git clone https://github.com/ggerganov/whisper.cpp
-open whisper.cpp/examples/whisper.objc/whisper.objc.xcodeproj/
+This example uses the whisper.xcframework which needs to be built first using the following command:
+```bash
+./build-xcframework.sh
 ```
 
-Make sure to build the project in `Release`:
+A model is also required to be downloaded and can be done using the following command:
+```bash
+./models/download-ggml-model.sh base.en
+```
 
-<img width="947" alt="image" src="https://user-images.githubusercontent.com/1991296/197382607-9e1e6d1b-79fa-496f-9d16-b71dc1535701.png">
+If you don't want to convert a Core ML model, you can skip this step by creating dummy model:
+```bash
+mkdir models/ggml-base.en-encoder.mlmodelc
+```
 
-Also, don't forget to add the `-DGGML_USE_ACCELERATE` compiler flag in Build Phases.
-This can significantly improve the performance of the transcription:
+## Core ML
 
-<img width="1072" alt="image" src="https://user-images.githubusercontent.com/1991296/208511239-8d7cdbd1-aa48-41b5-becd-ca288d53cc07.png">
-
-In this project, it also added `-O3 -DNDEBUG` to `Other C Flags`, but adding flags to app proj is not ideal in real world (applies to all C/C++ files), consider splitting xcodeproj in workspace in your own project.
+Follow the [`Core ML support` section of readme](../../README.md#core-ml-support) to convert the model.
+That is all the needs to be done to use the Core ML model in the app. The converted model is a
+resource in the project and will be used if it is available. Note that the Core ML model is only
+used for the encoder, the decoder which is in the ggml model is still required so both need to
+be available.
