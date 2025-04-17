@@ -1,7 +1,7 @@
 const path = require("path");
 const { whisper } = require(path.join(
   __dirname,
-  "../../../build/Release/whisper-addon"
+  "../../../build/Release/addon.node"
 ));
 const { promisify } = require("util");
 
@@ -11,6 +11,20 @@ const whisperParamsMock = {
   language: "en",
   model: path.join(__dirname, "../../../models/ggml-base.en.bin"),
   fname_inp: path.join(__dirname, "../../../samples/jfk.wav"),
+  use_gpu: true,
+  flash_attn: false,
+  no_prints: true,
+  comma_in_time: false,
+  translate: true,
+  no_timestamps: false,
+  audio_ctx: 0,
+  max_len: 0,
+  prompt: "",
+  print_progress: false,
+  progress_callback: (progress) => {
+    console.log(`Progress: ${progress}`);
+  },
+  max_context: -1
 };
 
 describe("Run whisper.node", () => {

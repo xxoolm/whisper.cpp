@@ -19,6 +19,10 @@ func (p *Params) SetTranslate(v bool) {
 	p.translate = toBool(v)
 }
 
+func (p *Params) SetSplitOnWord(v bool) {
+	p.split_on_word = toBool(v)
+}
+
 func (p *Params) SetNoContext(v bool) {
 	p.no_context = toBool(v)
 }
@@ -41,10 +45,6 @@ func (p *Params) SetPrintRealtime(v bool) {
 
 func (p *Params) SetPrintTimestamps(v bool) {
 	p.print_timestamps = toBool(v)
-}
-
-func (p *Params) SetSpeedup(v bool) {
-	p.speed_up = toBool(v)
 }
 
 // Set language id
@@ -114,6 +114,38 @@ func (p *Params) SetMaxTokensPerSegment(n int) {
 	p.max_tokens = C.int(n)
 }
 
+// Set audio encoder context
+func (p *Params) SetAudioCtx(n int) {
+	p.audio_ctx = C.int(n)
+}
+
+func (p *Params) SetMaxContext(n int) {
+	p.n_max_text_ctx = C.int(n)
+}
+
+func (p *Params) SetBeamSize(n int) {
+	p.beam_search.beam_size = C.int(n)
+}
+
+func (p *Params) SetEntropyThold(t float32) {
+	p.entropy_thold = C.float(t)
+}
+
+func (p *Params) SetTemperature(t float32) {
+	p.temperature = C.float(t)
+}
+
+// Sets the fallback temperature incrementation
+// Pass -1.0 to disable this feature
+func (p *Params) SetTemperatureFallback(t float32) {
+	p.temperature_inc = C.float(t)
+}
+
+// Set initial prompt
+func (p *Params) SetInitialPrompt(prompt string) {
+	p.initial_prompt = C.CString(prompt)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -137,6 +169,12 @@ func (p *Params) String() string {
 	str += fmt.Sprintf(" n_max_text_ctx=%d", p.n_max_text_ctx)
 	str += fmt.Sprintf(" offset_ms=%d", p.offset_ms)
 	str += fmt.Sprintf(" duration_ms=%d", p.duration_ms)
+	str += fmt.Sprintf(" audio_ctx=%d", p.audio_ctx)
+	str += fmt.Sprintf(" initial_prompt=%s", C.GoString(p.initial_prompt))
+	str += fmt.Sprintf(" entropy_thold=%f", p.entropy_thold)
+	str += fmt.Sprintf(" temperature=%f", p.temperature)
+	str += fmt.Sprintf(" temperature_inc=%f", p.temperature_inc)
+	str += fmt.Sprintf(" beam_size=%d", p.beam_search.beam_size)
 	if p.translate {
 		str += " translate"
 	}
@@ -160,9 +198,6 @@ func (p *Params) String() string {
 	}
 	if p.token_timestamps {
 		str += " token_timestamps"
-	}
-	if p.speed_up {
-		str += " speed_up"
 	}
 
 	return str + ">"
